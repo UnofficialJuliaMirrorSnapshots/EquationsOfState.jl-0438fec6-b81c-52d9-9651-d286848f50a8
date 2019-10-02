@@ -12,31 +12,28 @@ julia>
 module NonlinearFitting
 
 using LsqFit: curve_fit
-using StaticArrays: similar_type
+using Unitful: AbstractQuantity, upreferred, ustrip, unit, uconvert
 
-import ..EquationOfStateForm
+import ..EquationForm
 using ..Collections
 
 export lsqfit
 
-function lsqfit(
-    form::EquationOfStateForm,
-    eos::E,
-    xdata::Vector{T},
-    ydata::Vector{T};
-    debug::Bool = false, kwargs...
-) where {T<:AbstractFloat,E<:EquationOfState{T}}
-    model(x, p) = map(apply(form, E(p)), x)
-    fitted = curve_fit(model, xdata, ydata, collect(eos); kwargs...)
-    debug ? fitted : E(fitted.param)
-end  # function lsqfit
+# This idea is borrowed from [SimpleTraits.jl](https://github.com/mauro3/SimpleTraits.jl/blob/master/src/SimpleTraits.jl).
+abstract type Trait end
+abstract type Not{T<:Trait} <: Trait end
+struct HasUnit <: Trait end
+
+_unit_trait(T::Type{<:Real}) = Not{HasUnit}
+_unit_trait(T::Type{<:AbstractQuantity}) = HasUnit
+
 """
     lsqfit(form, eos, xdata, ydata; debug = false, kwargs...)
 
 Fit an equation of state using least-squares fitting method (with the Levenberg-Marquardt algorithm).
 
 # Arguments
-- `form::EquationOfStateForm`: an `EquationOfStateForm` instance. If `EnergyForm`, fit ``E(V)``; if `PressureForm`, fit ``P(V)``; if `BulkModulusForm`, fit ``B(V)``.
+- `form::EquationForm`: an `EquationForm` instance. If `EnergyForm`, fit ``E(V)``; if `PressureForm`, fit ``P(V)``; if `BulkModulusForm`, fit ``B(V)``.
 - `eos::EquationOfState`: a trial equation of state.
 - `xdata::AbstractVector`: a vector of volumes.
 - `ydata::AbstractVector`: a vector of energies, pressures, or bulk moduli.
@@ -44,14 +41,56 @@ Fit an equation of state using least-squares fitting method (with the Levenberg-
 - `kwargs`: the rest keyword arguments that will be sent to `LsqFit.curve_fit`. See its [documentation](https://github.com/JuliaNLSolvers/LsqFit.jl/blob/master/README.md).
 """
 function lsqfit(
-    form::EquationOfStateForm,
-    eos::E,
-    xdata::X,
-    ydata::Y;
-    kwargs...
-) where {E<:EquationOfState,X<:AbstractVector,Y<:AbstractVector}
+    form::EquationForm,
+    eos::EquationOfState,
+    xdata::AbstractVector,
+    ydata::AbstractVector;
+    kwargs...,
+)
+    T = eltype(eos)
+    return lsqfit(_unit_trait(T), form, eos, xdata, ydata, kwargs...)
+end # function lsqfit
+function lsqfit(
+    ::Type{Not{HasUnit}},
+    form::EquationForm,
+    eos::EquationOfState,
+    xdata::AbstractVector,
+    ydata::AbstractVector;
+    debug = false,
+    kwargs...,
+)
     T = promote_type(eltype(eos), eltype(xdata), eltype(ydata), Float64)
-    lsqfit(form, convert(similar_type(E, T), eos), convert(Vector{T}, xdata), convert(Vector{T}, ydata); kwargs...)
+    E = typeof(eos).name.wrapper
+    model = (x, p) -> map(apply(form, E(p...)), x)
+    fitted = curve_fit(
+        model,
+        T.(xdata),
+        T.(ydata),
+        T.(Collections.fieldvalues(eos)),
+        kwargs...,
+    )
+    return debug ? fitted : E(fitted.param...)
+end  # function lsqfit
+function lsqfit(
+    ::Type{HasUnit},
+    form::EquationForm,
+    eos::EquationOfState,
+    xdata::AbstractVector,
+    ydata::AbstractVector;
+    kwargs...,
+)
+    E = typeof(eos).name.wrapper
+    values = Collections.fieldvalues(eos)
+    original_units = map(unit, values)
+    trial_params, xdata, ydata = [map(ustrip ∘ upreferred, x) for x in (values, xdata, ydata)]
+    result = lsqfit(form, E(trial_params...), xdata, ydata, kwargs...)
+    if result isa EquationOfState
+        data = Collections.fieldvalues(result)
+        return E(
+            [uconvert(u, data[i] * upreferred(u)) for (i, u) in enumerate(original_units)]...
+        )
+    end
+    return result
 end  # function lsqfit
 
 end

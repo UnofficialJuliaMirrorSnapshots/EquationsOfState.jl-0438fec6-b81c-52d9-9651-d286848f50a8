@@ -1,5 +1,5 @@
 """
-# module FindVolume
+# module Find
 
 
 
@@ -9,7 +9,7 @@
 julia>
 ```
 """
-module FindVolume
+module Find
 
 using InteractiveUtils: subtypes
 using Statistics: median
@@ -26,43 +26,47 @@ using Roots: find_zero,
              Newton,
              ConvergenceFailed
 
-import ..EquationOfStateForm
+import ..EquationForm
 using ..Collections: EquationOfState, apply
 
 export findvolume
 
 function findvolume(
-    form::EquationOfStateForm,
+    form::EquationForm,
     eos::EquationOfState,
     y::Real,
     domain::Union{AbstractVector,Tuple},
-    method::AbstractBracketing
+    method::AbstractBracketing,
 )
     f(v) = apply(form, eos, v) - y
     return find_zero(f, (minimum(domain), maximum(domain)), method)
 end # function findvolume
 function findvolume(
-    form::EquationOfStateForm,
+    form::EquationForm,
     eos::EquationOfState,
     y::Real,
     domain::Union{AbstractVector,Tuple},
-    method::Union{AbstractNonBracketing,AbstractHalleyLikeMethod,AbstractNewtonLikeMethod}
+    method::Union{
+        AbstractNonBracketing,
+        AbstractHalleyLikeMethod,
+        AbstractNewtonLikeMethod,
+    },
 )
     f(v) = apply(form, eos, v) - y
     return find_zero(f, median(domain), method)
 end # function findvolume
 function findvolume(
-    form::EquationOfStateForm,
+    form::EquationForm,
     eos::EquationOfState,
     y::Real,
-    domain::Union{AbstractVector,Tuple}
+    domain::Union{AbstractVector,Tuple},
 )
     for T in [
-        subtypes(AbstractAlefeldPotraShi);
-        subtypes(AbstractBisection);
-        Brent;
-        subtypes(AbstractHalleyLikeMethod);
-        Newton;
+        subtypes(AbstractAlefeldPotraShi)
+        subtypes(AbstractBisection)
+        Brent
+        subtypes(AbstractHalleyLikeMethod)
+        Newton
         subtypes(AbstractSecant)
     ]
         @info("Using method \"$T\"...")
