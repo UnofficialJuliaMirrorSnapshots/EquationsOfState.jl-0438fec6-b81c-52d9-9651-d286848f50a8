@@ -670,6 +670,10 @@ end
 # This is a helper function and should not be exported.
 fieldvalues(eos::EquationOfState) = [getfield(eos, i) for i in 1:nfields(eos)]
 
+function Base.:(==)(x::T, y::T) where {T<:EquationOfState}
+    return all(getfield(x, i) == getfield(y, i) for i in 1:fieldcount(T))
+end
+
 Unitful.upreferred(::typeof(dimension(u"J"))) = u"eV"
 Unitful.upreferred(::typeof(dimension(u"m^3"))) = u"angstrom^3"
 Unitful.upreferred(::typeof(dimension(u"Pa"))) = u"eV/angstrom^3"
